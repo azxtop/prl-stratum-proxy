@@ -23,6 +23,10 @@ private/
 *.zip
 *.pem
 *.key
+*.so
+*.crt
+native/build/
+profiles/*.local.json
 id_rsa*
 id_ed25519*
 .ssh/

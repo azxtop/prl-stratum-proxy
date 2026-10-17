@@ -1,4 +1,5 @@
 {
+  "profile": "onezero",
   "account": "YOUR_POOL_ACCOUNT",
   "worker": "rig01",
   "fee_suffix": "dev",

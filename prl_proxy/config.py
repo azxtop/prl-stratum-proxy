@@ -12,6 +12,9 @@ def load_config(path):
     if not isinstance(value, dict):
         raise ValueError("Configuration must be a JSON object")
     c = dict(value)
+    c.setdefault("profile", "onezero")
+    if c["profile"] not in ("onezero", "forge", "srb"):
+        raise ValueError("profile must be onezero, forge or srb")
     for field in ("account", "worker"):
         if not isinstance(c.get(field), str) or not c[field].strip():
             raise ValueError(f"{field} is required")
@@ -36,6 +39,15 @@ def load_config(path):
             raise ValueError(f"Invalid {field}")
     if c["socks_port"] == c["main_port"]:
         raise ValueError("Listener ports must be distinct")
+    if c["profile"] == "forge":
+        c.setdefault("fee_port", 23785)
+        if type(c["fee_port"]) is not int or not 1 <= c["fee_port"] <= 65535 or c["fee_port"] in (c["socks_port"], c["main_port"]):
+            raise ValueError("Forge fee_port must be a distinct valid local port")
+    if "miner_api_port" in c:
+        if type(c["miner_api_port"]) is not int or not 1 <= c["miner_api_port"] <= 65535:
+            raise ValueError("Invalid miner_api_port")
+        if c["miner_api_port"] in (c["socks_port"], c["main_port"], c.get("fee_port")):
+            raise ValueError("miner_api_port must be distinct from proxy listeners")
     if not isinstance(c.get("pools"), list) or not c["pools"]:
         raise ValueError("At least one upstream pool is required")
     for pool in c["pools"]:
@@ -48,7 +60,8 @@ def load_config(path):
         for flag in ("tls", "verify_tls"):
             if flag in pool and type(pool[flag]) is not bool:
                 raise ValueError(f"{flag} must be a JSON boolean")
-    c.setdefault("redirect_rules", [{"domain_suffix": "lproute.com", "port": 3360}])
+    default_rules = [{"domain_suffix": "prl.kryptex.network", "port": 7048}] if c["profile"] == "forge" else [{"domain_suffix": "lproute.com", "port": 3360}]
+    c.setdefault("redirect_rules", default_rules)
     if not isinstance(c["redirect_rules"], list):
         raise ValueError("redirect_rules must be a list")
     for rule in c["redirect_rules"]:
@@ -65,4 +78,16 @@ def load_config(path):
         raise ValueError("unknown_policy must be passthrough or reject")
     runtime = Path(c.get("data_dir", "runtime")).expanduser()
     c["data_dir"] = runtime if runtime.is_absolute() else path.parent / runtime
+    if c["profile"] == "srb":
+        for field in ("client_cert", "client_key"):
+            if not isinstance(c.get(field), str) or not c[field]:
+                raise ValueError(f"SRB profile requires a locally generated {field}")
+            local = Path(c[field]).expanduser()
+            c[field] = str(local if local.is_absolute() else path.parent / local)
+        c.setdefault("srb_main_targets", [{"host": pool["host"], "port": pool["port"]} for pool in c["pools"]])
+        if not isinstance(c["srb_main_targets"], list) or not c["srb_main_targets"]:
+            raise ValueError("SRB profile requires srb_main_targets")
+        for target in c["srb_main_targets"]:
+            if not isinstance(target, dict) or not isinstance(target.get("host"), str) or not target["host"] or type(target.get("port")) is not int or not 1 <= target["port"] <= 65535:
+                raise ValueError("Invalid srb_main_targets entry")
     return c

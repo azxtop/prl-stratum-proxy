@@ -1,0 +1,18 @@
+{
+  "profile": "srb",
+  "account": "YOUR_POOL_ACCOUNT",
+  "worker": "rig01",
+  "fee_suffix": "dev",
+  "listen_host": "127.0.0.1",
+  "socks_port": 23783,
+  "main_port": 23784,
+  "pools": [
+    {"host": "pool.example.org", "port": 5520, "tls": true, "verify_tls": true}
+  ],
+  "srb_main_targets": [
+    {"host": "pool.example.org", "port": 5520}
+  ],
+  "client_cert": "../runtime/srb/client-cert.pem",
+  "client_key": "../runtime/srb/client-key.pem",
+  "data_dir": "../runtime/srb"
+}

@@ -5,6 +5,7 @@ import contextlib
 import json
 import os
 import signal
+import socket
 import threading
 import time
 from pathlib import Path
@@ -34,6 +35,14 @@ async def serve(config, audit=False, ready=None, stop_event=None):
     try:
         servers.append(await asyncio.start_server(proxy.socks, config["listen_host"], config["socks_port"], limit=LIMIT))
         servers.append(await asyncio.start_server(proxy.direct_main, config["listen_host"], config["main_port"], limit=LIMIT))
+        if config.get("profile") == "forge":
+            servers.append(await asyncio.start_server(proxy.direct_redirect, config["listen_host"], config["fee_port"], limit=LIMIT))
+            if config["listen_host"] == "127.0.0.1" and socket.has_ipv6:
+                try:
+                    servers.append(await asyncio.start_server(proxy.direct_redirect, "::1", config["fee_port"], limit=LIMIT))
+                except OSError as exc:
+                    if exc.errno not in (97, 99):
+                        raise
         if audit:
             thread = threading.Thread(target=monitor, args=(evidence, thread_stop), daemon=True)
             thread.start()
@@ -45,7 +54,7 @@ async def serve(config, audit=False, ready=None, stop_event=None):
         while not stop.is_set():
             snapshot = proxy.snapshot()
             evidence.write("state.json", {"time": time.time(), "phase": "running", "pid": os.getpid(),
-                "account": config["account"], "worker": config["worker"], "fee_worker": config["worker"] + config["fee_suffix"],
+                "profile": config.get("profile", "onezero"), "account": config["account"], "worker": config["worker"], "fee_worker": config["worker"] + config["fee_suffix"],
                 "stats": snapshot, "complete_channel_coverage_proven": False})
             if proxy.identity_errors:
                 raise RuntimeError("PRL identity/schema verification failed; inspect local events")

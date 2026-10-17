@@ -1,0 +1,18 @@
+{
+  "profile": "forge",
+  "account": "YOUR_POOL_ACCOUNT",
+  "worker": "rig01",
+  "fee_suffix": "dev",
+  "listen_host": "127.0.0.1",
+  "socks_port": 23783,
+  "main_port": 23784,
+  "fee_port": 23785,
+  "miner_api_port": 23900,
+  "pools": [
+    {"host": "pool.example.org", "port": 5520, "tls": true, "verify_tls": true}
+  ],
+  "redirect_rules": [
+    {"domain_suffix": "prl.kryptex.network", "port": 7048}
+  ],
+  "data_dir": "../runtime/forge"
+}

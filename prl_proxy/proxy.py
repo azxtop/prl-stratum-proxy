@@ -1,6 +1,7 @@
 """Scoped SOCKS5 routing; real PRL replies correlated by proxy-owned RPC IDs."""
 import asyncio, hashlib, ipaddress, json, socket, ssl, time
 from collections import OrderedDict
+from .tls_stream import TLSStream
 
 LIMIT=8*1024*1024
 
@@ -10,6 +11,10 @@ class Proxy:
         self.counts={role:dict(connected=0,authorized=0,submitted=0,accepted=0,rejected=0,unanswered=0,errors=0,pending=0,unknown_target_accepts=0,accepted_work=0.,last_accepted=0.,last_job=0.) for role in ('main','redirect')}
         self.contexts={}
         self.targets=[];self.unknown=[]
+        self.server_tls=None
+        if c.get('profile')=='srb':
+            self.server_tls=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            self.server_tls.load_cert_chain(c['client_cert'],c['client_key'])
 
     def event(self,kind,**kw):self.emit(kind,**kw)
     def snapshot(self):return {'roles':self.counts,'targets':self.targets,'unknown_connections':self.unknown,'identity_errors':self.identity_errors}
@@ -31,14 +36,17 @@ class Proxy:
             except Exception as e:last=e;self.event('pool_connect_error',role=role,connection=cid,error=repr(e))
         raise ConnectionError('All configured user pool relays failed: '+repr(last))
 
-    async def mining(self,reader,writer,role,ready=None):
+    async def mining(self,reader,writer,role,ready=None,first_line=None):
         task=asyncio.current_task();self.tasks.add(task);self.writers.add(writer)
         self.serial+=1;cid=self.serial;count=self.counts[role];pending={};jobs=OrderedDict();up=None;pipes=[];sequence=0;authorized=False
         worker=self.c['worker']+ (self.c.get('fee_suffix','dev') if role=='redirect' else '')
 
         async def outgoing():
             nonlocal sequence
-            while line:=await reader.readline():
+            first=first_line
+            while True:
+                line=first if first is not None else await reader.readline();first=None
+                if not line:return
                 msg=json.loads(line);method=msg.get('method');params=msg.get('params');original_id=msg.get('id');info={'method':method,'original_id':original_id,'time':time.time()}
                 if method in ('mining.authorize','mining.submit'):
                     if not isinstance(params,dict):self.identity_errors+=1;raise RuntimeError('Unverified PRL parameter schema')
@@ -46,10 +54,14 @@ class Proxy:
                         wallet=params.get('wallet');original_worker=params.get('worker')
                         if not isinstance(wallet,str) or not wallet:self.identity_errors+=1;raise RuntimeError('Missing wallet identity')
                         if role=='redirect':
+                            if self.c.get('profile')=='forge' and not wallet.startswith('prl1'):
+                                self.identity_errors+=1;raise RuntimeError('Unverified Forge developer authorization')
                             params=dict(params);params.update(wallet=self.c['account'],worker=worker);msg['params']=params
                             self.event('authorize_rewritten',role=role,connection=cid,original_wallet=wallet,original_worker=original_worker,wallet=self.c['account'],worker=worker,params_keys=sorted(params))
                         else:
-                            if wallet!=self.c['account'] or original_worker!=worker:self.identity_errors+=1;raise RuntimeError('Unexpected primary mining identity')
+                            valid=wallet==self.c['account'] and original_worker==worker
+                            if self.c.get('profile')=='forge':valid=wallet in (self.c['account'],self.c['account']+'.'+worker) and params.get('worker',worker)==worker
+                            if not valid:self.identity_errors+=1;raise RuntimeError('Unexpected primary mining identity')
                             self.event('authorize_observed',role=role,connection=cid,wallet=wallet,worker=original_worker,params_keys=sorted(params))
                     else:
                         if not authorized:raise RuntimeError('Submit before successful authorization reply')
@@ -120,6 +132,7 @@ class Proxy:
             self.tasks.discard(task)
 
     async def direct_main(self,r,w):await self.mining(r,w,'main')
+    async def direct_redirect(self,r,w):await self.mining(r,w,'redirect')
 
     async def socks(self,reader,writer):
         task=asyncio.current_task();self.tasks.add(task);self.writers.add(writer);up=None;pipes=[]
@@ -137,17 +150,34 @@ class Proxy:
             rules=self.c.get('redirect_rules',[{'domain_suffix':'lproute.com','port':3360}])
             matched=any(port==rule['port'] and (norm==rule['domain_suffix'] or norm.endswith('.'+rule['domain_suffix'])) for rule in rules)
             role='main' if norm in ('127.0.0.1','::1','localhost') and port==self.c['main_port'] else 'redirect' if matched else 'unknown'
+            if self.c.get('profile')=='srb':
+                main_targets=self.c.get('srb_main_targets',self.c['pools'])
+                primary=any(norm==item['host'].lower().rstrip('.') and port==item['port'] for item in main_targets)
+                role='main_opaque' if primary else 'srb_candidate'
             item={'time':time.time(),'host':host,'port':port,'role':role};self.targets.append(item);self.targets=self.targets[-256:];self.event('socks_target',**item)
             async def ready():writer.write(b'\x05\x00\x00\x01'+b'\0'*6);await writer.drain()
-            if role!='unknown':await self.mining(reader,writer,role,ready);return
-            if self.c.get('unknown_policy','passthrough')=='reject':
+            if role=='srb_candidate':
+                await ready()
+                tls=TLSStream(reader,writer,self.server_tls)
+                await asyncio.wait_for(tls.handshake(),15)
+                first=await asyncio.wait_for(tls.readline(),15)
+                try:msg=json.loads(first);params=msg.get('params')
+                except (ValueError,AttributeError):msg={};params=None
+                verified=(msg.get('method')=='mining.authorize' and isinstance(params,dict) and str(params.get('wallet','')).startswith('prl1') and str(params.get('agent','')).startswith('SRBMiner-MULTI/') and params.get('type')=='v2')
+                if not verified:
+                    self.unknown.append(item);self.unknown=self.unknown[-256:];self.event('unknown_srb_protocol_rejected',host=host,port=port);return
+                self.event('srb_devfee_protocol_verified',host=host,port=port)
+                await self.mining(tls,tls,'redirect',first_line=first);return
+            if role in ('main','redirect'):await self.mining(reader,writer,role,ready);return
+            if role!='main_opaque' and self.c.get('unknown_policy','passthrough')=='reject':
                 self.unknown.append(item);self.unknown=self.unknown[-256:];self.event('unknown_rejected',host=host,port=port)
                 writer.write(b'\x05\x02\x00\x01'+b'\0'*6);await writer.drain();return
-            self.unknown.append(item);self.unknown=self.unknown[-256:];r,up=await asyncio.wait_for(asyncio.open_connection(host,port,limit=LIMIT),15);self.writers.add(up);await ready()
+            if role=='unknown':self.unknown.append(item);self.unknown=self.unknown[-256:]
+            r,up=await asyncio.wait_for(asyncio.open_connection(host,port,limit=LIMIT),15);self.writers.add(up);await ready()
             async def pipe(src,dst,direction):
                 first=True
                 while chunk:=await src.read(65536):
-                    if first:
+                    if first and role=='unknown':
                         hint='tls_record' if chunk[:1] in (b'\x16',b'\x17') else 'json_candidate' if chunk.lstrip()[:1] in (b'{',b'[') else 'opaque'
                         self.event('unknown_protocol',host=host,port=port,direction=direction,hint=hint,first_chunk_bytes=len(chunk));first=False
                     dst.write(chunk);await dst.drain()
