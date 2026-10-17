@@ -1,0 +1,25 @@
+{
+  "account": "YOUR_POOL_ACCOUNT",
+  "worker": "rig01",
+  "fee_suffix": "dev",
+  "worker_max_length": 15,
+  "listen_host": "127.0.0.1",
+  "socks_port": 23783,
+  "main_port": 23784,
+  "pools": [
+    {
+      "host": "pool.example.org",
+      "port": 5520,
+      "tls": true,
+      "verify_tls": true
+    }
+  ],
+  "redirect_rules": [
+    {
+      "domain_suffix": "lproute.com",
+      "port": 3360
+    }
+  ],
+  "unknown_policy": "passthrough",
+  "data_dir": "runtime"
+}
