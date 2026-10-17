@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import socket
 import ssl
 import subprocess
 import tempfile
@@ -131,18 +132,42 @@ class ProfileTests(unittest.IsolatedAsyncioTestCase):
         context.check_hostname = False
         context.verify_mode = ssl.CERT_NONE
         # TLS client fixture has the same trust behavior as the opt-in owned SRB process.
-        r, w = await self.socks(port, "192.0.2.50", 3360)
-        await w.start_tls(context, server_hostname="localhost")
-        await self.authorize_submit(r, w, dict(wallet="prl1fixture", worker="dev", agent="SRBMiner-MULTI/3.7.6", type="v2"))
+        # A blocking stdlib client in a thread also exercises Python 3.10, which has no StreamWriter.start_tls.
+        proof = dict(job_id="job01", nonce="00a1", proof=[1, 2, 3])
+        def tls_client(host, target_port, params, valid):
+            def exact(sock, length):
+                value = b""
+                while len(value) < length:
+                    chunk = sock.recv(length - len(value))
+                    if not chunk:
+                        raise ConnectionError("Fixture SOCKS connection closed")
+                    value += chunk
+                return value
+            with socket.create_connection(("127.0.0.1", port), timeout=5) as raw:
+                raw.sendall(b"\x05\x01\x00")
+                self.assertEqual(exact(raw, 2), b"\x05\x00")
+                name = host.encode("ascii")
+                raw.sendall(b"\x05\x01\x00\x03" + bytes([len(name)]) + name + target_port.to_bytes(2, "big"))
+                self.assertEqual(exact(raw, 10)[:2], b"\x05\x00")
+                with context.wrap_socket(raw, server_hostname="localhost") as tls:
+                    with tls.makefile("rb") as source:
+                        tls.sendall(json.dumps(dict(id=41, method="mining.authorize", params=params)).encode() + b"\n")
+                        if not valid:
+                            self.assertEqual(source.readline(), b"")
+                            return
+                        self.assertEqual(json.loads(source.readline())["id"], 41)
+                        self.assertEqual(json.loads(source.readline())["method"], "mining.notify")
+                        tls.sendall(json.dumps(dict(id=41, method="mining.submit", params=proof)).encode() + b"\n")
+                        self.assertTrue(json.loads(source.readline())["result"])
+        await asyncio.wait_for(asyncio.to_thread(tls_client, "192.0.2.50", 3360,
+            dict(wallet="prl1fixture", worker="dev", agent="SRBMiner-MULTI/3.7.6", type="v2"), True), 15)
         self.assertEqual(self.received[0]["params"]["wallet"], "sample_account")
         self.assertEqual(self.received[0]["params"]["worker"], "rig01dev")
+        self.assertEqual(self.received[1]["params"], proof)
         self.assertEqual(proxy.counts["redirect"]["accepted"], 1)
         # A different protocol is rejected locally before opening an upstream mining connection.
-        r, w = await self.socks(port, "192.0.2.51", 3361)
-        await w.start_tls(context, server_hostname="localhost")
-        w.write(b'{"id":1,"method":"mining.authorize","params":{"wallet":"prl1fixture","agent":"other","type":"v2"}}\n')
-        await w.drain()
-        self.assertEqual(await asyncio.wait_for(r.read(), 3), b"")
+        await asyncio.wait_for(asyncio.to_thread(tls_client, "192.0.2.51", 3361,
+            dict(wallet="prl1fixture", agent="other", type="v2"), False), 15)
         self.assertEqual(len(self.received), 2)
         self.assertEqual(proxy.identity_errors, 0)
         self.assertTrue(any(e["event"] == "unknown_srb_protocol_rejected" for e in self.events))
