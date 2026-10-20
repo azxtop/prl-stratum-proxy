@@ -2,6 +2,8 @@
 
 本地 PRL Stratum 转接代理，包含 OneZeroMiner 1.8.2、ForgeMiner 1.8.8 和 SRBMiner-MULTI 3.7.6 三种配置。转接符合已知规则及协议的连接，保留计算证明，并逐条关联真实提交回执。
 
+SRBMiner-MULTI **3.7.8** 的独立实验适配已加入 [`experimental/srb378`](experimental/srb378/README.md)，包含明文/TLS 识别、主份额解码、`plain_proof` 转接、固定版本启动器及有时限的独立 guard。它使用单独的配置和入口；下文 SRB 主连接透传及旧版启动说明仍指 3.7.6，不适用于 3.7.8。
+
 这是独立的通用代理。项目不包含矿工二进制、矿池账号、私人中转地址、SSH 配置、机器清单或生产日志，也不包含针对某台机器的旧矿工接管和恢复逻辑。
 
 OneZero 使用下方说明；Forge 与 SRB 的版本校验、编译、启动及限制见 **[三种矿工配置](profiles/README.md)**。SRB 需要明确启用自有子进程的临时 TLS 验证模式修改；Forge 使用只作用于指定程序的本地连接 hook。两者不能直接套用 OneZero 的启动命令。

@@ -1,0 +1,13 @@
+{
+  "account": "YOUR_POOL_ACCOUNT",
+  "worker": "rig01",
+  "fee_suffix": "dev",
+  "socks_port": 25583,
+  "api_port": 25580,
+  "pools": [
+    {"host": "pool.example.org", "port": 5520, "verify_tls": true}
+  ],
+  "certificate": "../../runtime/srb378/client-cert.pem",
+  "key": "../../runtime/srb378/client-key.pem",
+  "data_dir": "../../runtime/srb378"
+}

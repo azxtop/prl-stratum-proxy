@@ -47,6 +47,8 @@ python3 -m prl_proxy.launcher --config profiles/forge.local.json \
 
 ## SRB
 
+本节是 **3.7.6** 配置。新版本 **3.7.8** 使用独立实验入口，见 [`experimental/srb378`](../experimental/srb378/README.md)，不能套用本节旧版内存偏移和配置。
+
 需要 Linux x86_64、Python 3.10+、OpenSSL 命令行，以及系统本来允许父进程调试自有子进程的权限。若策略不允许，启动器失败退出；不要为此关闭系统安全功能或提升容器权限。
 
 先在本机生成临时本地 TLS 服务证书与私钥，项目不附带任何证书或私钥：
