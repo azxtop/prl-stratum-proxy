@@ -13,7 +13,7 @@ import time
 import unittest
 
 from experimental.srb378.proxy import Proxy
-from experimental.srb378.run import config, guard, identity, stop_owned
+from experimental.srb378.run import config, guard, identity, stop_owned, device_hashrates
 
 
 @unittest.skipUnless(shutil.which('openssl'), 'OpenSSL command required for local TLS fixtures')
@@ -97,6 +97,10 @@ class Protocol378Tests(unittest.IsolatedAsyncioTestCase):
 
 
 class Config378Tests(unittest.TestCase):
+    def test_native_aggregate_is_not_double_counted(self):
+        response={'hashrate':{'gpu':{'gpu0':100.0,'gpu1':200.0,'total':300.0}}}
+        self.assertEqual(sum(device_hashrates(response)),300.0)
+
     def test_worker_suffix_limit_and_relative_paths(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder);p=root/'config.json'

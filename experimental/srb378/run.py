@@ -94,6 +94,13 @@ def api(port):
         return json.loads(r.read(2 * 1024**2))
 
 
+def device_hashrates(algorithm):
+    # Native SRB includes both gpu0/gpu1/... and an aggregate "total".
+    # Count each physical device once when deriving the rig hashrate.
+    return [value for name, value in algorithm['hashrate']['gpu'].items()
+            if re.fullmatch(r'gpu[0-9]+', name)]
+
+
 def guard(run):
     """No recovery hooks: stop only the recorded SRB child if monitoring disappears."""
     info = read(run / 'run.json')
@@ -177,7 +184,7 @@ async def experiment(args):
                 if previous is not None and any(x<y for x,y in zip(current,previous)):
                     raise RuntimeError('Native uptime or accepted-share counter reset')
                 previous=current
-                rates=list(algo['hashrate']['gpu'].values())
+                rates=device_hashrates(algo)
                 if rates and all(x>0 for x in rates):
                     last_good=time.monotonic()
                 row.update(total_ths=sum(rates)/1e12,api=a)
