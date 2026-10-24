@@ -1,6 +1,6 @@
 # PRL Stratum Proxy
 
-本地 PRL Stratum 转接代理，包含 OneZeroMiner 1.8.2、ForgeMiner 1.8.8 和 SRBMiner-MULTI 3.7.6 三种配置。转接符合已知规则及协议的连接，保留计算证明，并逐条关联真实提交回执。
+本地 PRL Stratum 转接代理，包含 OneZeroMiner **1.8.2 / 1.8.3**、ForgeMiner 1.8.8 和 SRBMiner-MULTI 3.7.6 三种配置。转接符合已知规则及协议的连接，保留计算证明，并逐条关联真实提交回执。
 
 SRBMiner-MULTI **3.7.8** 的独立实验适配已加入 [`experimental/srb378`](experimental/srb378/README.md)，包含明文/TLS 识别、主份额解码、`plain_proof` 转接、固定版本启动器及有时限的独立 guard。它使用单独的配置和入口；下文 SRB 主连接透传及旧版启动说明仍指 3.7.6，不适用于 3.7.8。
 
@@ -44,6 +44,14 @@ python3 -m prl_proxy run --config config.json
 
 账号和正常矿工名必须与代理配置一致；`rig01` 的转接矿工名默认为 `rig01dev`。若调整代理端口，要同步调整矿工参数。矿工版本和参数以其官方说明为准。
 
+也可使用版本校验启动器，从同一份配置自动生成 OneZero 参数（先启动代理）：
+
+```bash
+python3 -m prl_proxy.launcher --config config.json --binary /path/to/onezerominer
+```
+
+启动器只接受已核验的 Linux x86_64 1.8.2 / 1.8.3 二进制，并要求代理状态新鲜、账号和矿工名一致。默认传入 `--max-no-acc 60`（60 分钟未接受份额重连），不设置超频或 kernel。校验值、升级方式与验证边界见 [OneZero 版本说明](profiles/onezero.md)。
+
 矿工请从 [OneZeroMiner 官方发布页](https://github.com/OneZeroMiner/onezerominer/releases) 获取。本项目不重新分发其二进制，也不提供私人下载镜像。
 
 对于确实需要跳过上游证书校验的自建中转，可仅在该条上游配置中设置 `"verify_tls": false`。这会降低该连接的身份验证能力，并留下事件记录；不会修改系统证书库。明文上游使用 `"tls": false`，只应在可信环境中配置。
@@ -82,7 +90,7 @@ python3 -m prl_proxy run --config config.json --audit
 
 各配置的未知目标行为不同，详见配置说明，不保证未识别通道会转到自己的账号。矿工绕过 SOCKS/hook、受保护进程、未解析的分片/IPv6 扩展头、捕获丢失和进程归属缺失均会影响完整性。出站包头审计观察同一网络命名空间的流量，可能包含平台服务，不能仅凭地址或端口认定属于矿工。没有安装系统级强制出口限制。
 
-公开版只有显式执行的 Forge/SRB 子进程启动器，不接管其他矿工，也不自动回退。代理异常时的矿工恢复策略应由部署者自己的监护进程负责；systemd 示例仅恢复代理服务。无需为本项目关闭系统安全功能或修改全局证书。
+公开版只有显式执行的 OneZero/Forge/SRB 子进程启动器，不接管其他矿工，也不自动回退。代理异常时的矿工恢复策略应由部署者自己的监护进程负责；systemd 示例仅恢复代理服务。无需为本项目关闭系统安全功能或修改全局证书。
 
 ## 测试
 

@@ -1,4 +1,4 @@
-"""Explicit child-only launchers for the two additional miner profiles."""
+"""Explicit child-only launchers for version-pinned miner profiles."""
 import argparse
 import hashlib
 import json
@@ -13,6 +13,23 @@ from .config import load_config
 from .evidence import Evidence
 
 FORGE_SHA256 = "248b7f879f872aed733237b16c9a286ad5bc06cb51884ec97bc0daa275acf2c4"
+ONEZERO_SHA256 = {
+    "d29ef582a7342b4914b990337693830ce75507accf4f86565d45911b6f743140": "1.8.2",
+    "20cd045a78849bea80e4a8b35dc278076b1fedeaa6d40acf6788d51b77cfa2b6": "1.8.3",
+}
+
+
+def onezero_arguments(binary, config):
+    return [str(binary), "-a", "pearlhash", "-o", "stratum+tcp://127.0.0.1:" + str(config["main_port"]),
+        "-w", config["account"], "--worker", config["worker"], "-p", "x",
+        "--proxy", "127.0.0.1:" + str(config["socks_port"]), "--max-no-acc", "60"]
+
+
+def start_onezero(binary, config):
+    digest = hashlib.sha256(binary.read_bytes()).hexdigest()
+    if digest not in ONEZERO_SHA256:
+        raise ValueError("OneZero binary is not a verified 1.8.2/1.8.3 artifact")
+    return subprocess.Popen(onezero_arguments(binary, config), cwd=binary.parent, start_new_session=True)
 
 
 def forge_arguments(binary, config):
@@ -32,7 +49,7 @@ def srb_arguments(binary, config):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Launch one owned Forge/SRB process; never manages other miners")
+    parser = argparse.ArgumentParser(description="Launch one owned OneZero/Forge/SRB process; never manages other miners")
     parser.add_argument("--config", required=True)
     parser.add_argument("--binary", required=True)
     parser.add_argument("--hook", help="Forge: compiled native/netroute.c shared object")
@@ -52,7 +69,9 @@ def main():
         if state.get("account") != c["account"] or state.get("worker") != c["worker"]:
             raise ValueError("Proxy identity differs from launcher configuration")
         evidence = Evidence(c["data_dir"])
-        if c["profile"] == "forge":
+        if c["profile"] == "onezero":
+            child = start_onezero(binary, c)
+        elif c["profile"] == "forge":
             if hashlib.sha256(binary.read_bytes()).hexdigest() != FORGE_SHA256:
                 raise ValueError("Forge binary is not the verified 1.8.8 artifact")
             if not args.hook:
@@ -69,7 +88,7 @@ def main():
             from .srb_patch import start
             child = start(srb_arguments(binary, c), c["data_dir"])
         else:
-            raise ValueError("Use the normal OneZero recipe for profile onezero")
+            raise ValueError("Unsupported miner profile")
         evidence.event("owned_miner_started", profile=c["profile"], pid=child.pid, file_modified=False)
         for sig in (signal.SIGTERM, signal.SIGINT):
             signal.signal(sig, lambda *_: os.killpg(child.pid, signal.SIGTERM) if child.poll() is None else None)
