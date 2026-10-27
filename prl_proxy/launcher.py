@@ -16,6 +16,7 @@ FORGE_SHA256 = "248b7f879f872aed733237b16c9a286ad5bc06cb51884ec97bc0daa275acf2c4
 ONEZERO_SHA256 = {
     "d29ef582a7342b4914b990337693830ce75507accf4f86565d45911b6f743140": "1.8.2",
     "20cd045a78849bea80e4a8b35dc278076b1fedeaa6d40acf6788d51b77cfa2b6": "1.8.3",
+    "7c2d68d61545cb121483fef76b6a1c2ab8fbeadab8e3ce737f76e19fd229b7ec": "1.8.4",
 }
 
 
@@ -28,7 +29,7 @@ def onezero_arguments(binary, config):
 def start_onezero(binary, config):
     digest = hashlib.sha256(binary.read_bytes()).hexdigest()
     if digest not in ONEZERO_SHA256:
-        raise ValueError("OneZero binary is not a verified 1.8.2/1.8.3 artifact")
+        raise ValueError("OneZero binary is not a verified 1.8.2/1.8.3/1.8.4 artifact")
     return subprocess.Popen(onezero_arguments(binary, config), cwd=binary.parent, start_new_session=True)
 
 

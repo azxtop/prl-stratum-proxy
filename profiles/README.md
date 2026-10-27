@@ -4,7 +4,7 @@
 
 | profile | 对应版本 | 连接方式 | 主连接统计 |
 | --- | --- | --- | --- |
-| `onezero` | OneZeroMiner 1.8.2 / 1.8.3 | 原生 SOCKS5，域名及端口规则 | 解码并校验身份，可记录份额 |
+| `onezero` | OneZeroMiner 1.8.2 / 1.8.3 / 1.8.4 | 原生 SOCKS5，域名及端口规则 | 解码并校验身份，可记录份额 |
 | `forge` | ForgeMiner 1.8.8 | 指定子进程的 `LD_PRELOAD` 连接路由 | 本地明文 PRL，经代理连接上游 |
 | `srb` | SRBMiner-MULTI 3.7.6 | 原生 SOCKS5、局部 TLS 终止、协议识别 | 原字节透传，不解码、不统计主份额 |
 
