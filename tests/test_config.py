@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from prl_proxy.config import load_config
+from prl_proxy.config import default_redirect_rules, load_config
 from prl_proxy.evidence import Evidence
 
 
@@ -23,6 +23,30 @@ class ConfigurationTest(unittest.TestCase):
         self.assertEqual(c["fee_suffix"], "dev")
         self.assertEqual(c["data_dir"], self.path.parent / "runtime")
         self.assertEqual(c["unknown_policy"], "passthrough")
+        self.assertEqual(c["redirect_rules"], default_redirect_rules("onezero"))
+        self.assertEqual(len(c["redirect_rules"]), 3)
+
+    def test_explicit_rules_remain_authoritative(self):
+        for rules in ([], [{"domain_suffix": "lproute.com", "port": 3360}]):
+            self.value["redirect_rules"] = rules
+            self.assertEqual(self.load()["redirect_rules"], rules)
+
+    def test_exact_host_validation_and_normalization(self):
+        self.value["redirect_rules"] = [{"host": "PEARL-HK.LPROUTE.COM.", "port": 3361}]
+        self.assertEqual(self.load()["redirect_rules"], [{"host": "pearl-hk.lproute.com", "port": 3361}])
+        for rule in ({"host": "", "port": 3361}, {"host": None, "port": 3361},
+                     {"host": "example.org", "domain_suffix": "example.org", "port": 3361},
+                     {"host": "example.org", "port": True}, {"port": 3361}):
+            self.value["redirect_rules"] = [rule]
+            with self.assertRaises(ValueError):
+                self.load()
+
+    def test_other_profile_defaults_and_fresh_rule_objects(self):
+        self.assertEqual(default_redirect_rules("forge"), [{"domain_suffix": "prl.kryptex.network", "port": 7048}])
+        self.assertEqual(default_redirect_rules("srb"), [{"domain_suffix": "lproute.com", "port": 3360}])
+        rules = default_redirect_rules()
+        rules[0]["port"] = 1
+        self.assertEqual(default_redirect_rules()[0]["port"], 3360)
 
     def test_reject_open_proxy(self):
         self.value["listen_host"] = "0.0.0.0"

@@ -79,7 +79,7 @@ def main():
                 raise ValueError("Forge requires --hook pointing to a locally built shared object")
             hook = Path(args.hook).resolve(strict=True)
             rules = Path(c["data_dir"]) / "native-routes.txt"
-            rules.write_text("".join(f"{rule['domain_suffix']} {rule['port']} {c['fee_port']}\n" for rule in c["redirect_rules"]), encoding="utf-8")
+            rules.write_text("".join(f"{rule.get('host', rule.get('domain_suffix'))} {rule['port']} {c['fee_port']}\n" for rule in c["redirect_rules"]), encoding="utf-8")
             env = {k: v for k, v in os.environ.items() if k not in ("LD_PRELOAD", "LD_AUDIT", "COLUMNS", "LINES") and not k.startswith(("FORGE_", "PRL_OBSERVE_"))}
             env.update(LD_PRELOAD=str(hook), PRL_OBSERVE_BINARY=str(binary), PRL_OBSERVE_LOG=str(Path(c["data_dir"]) / "native-events.jsonl"), PRL_OBSERVE_ROUTES=str(rules), NO_COLOR="1")
             child = subprocess.Popen(forge_arguments(binary, c), cwd=binary.parent, env=env, start_new_session=True)

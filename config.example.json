@@ -19,6 +19,14 @@
     {
       "domain_suffix": "lproute.com",
       "port": 3360
+    },
+    {
+      "host": "pearl-hk.lproute.com",
+      "port": 3361
+    },
+    {
+      "host": "prl.suprnova.cc",
+      "port": 3373
     }
   ],
   "unknown_policy": "passthrough",

@@ -14,6 +14,8 @@
 
 见根目录 [README](../README.md)、[config.example.json](../config.example.json) 和 [版本校验启动说明](onezero.md)。无需原生 hook 或进程内修改。
 
+默认规则现包含原 `lproute.com:3360` 后缀匹配及两条精确后备目标。已有显式 `redirect_rules` 的配置需自行合并新增规则，见 [通道规则与更新](onezero.md#通道规则与更新)。新增目标、路由探针与真实份额的证据边界也在该节列明。
+
 ## Forge
 
 需要 Linux x86_64、Python 3.10+、C 编译器、make、glibc。配置与编译：
@@ -41,7 +43,7 @@ python3 -m prl_proxy.launcher --config profiles/forge.local.json \
 
 原生 hook 只在 `/proc/self/exe` 与指定矿工绝对路径一致时启用，不注入已有进程。正常矿池参数指向本地 `main_port`；原生路由将已知 `prl.kryptex.network:7048` 的连接改接本机 `fee_port`，代理确认授权钱包是 `prl1` 开头，再改写身份并转发自己的上游。对已知版本的明文 PRL 通道工作，不自动解密其他 TLS 连接。
 
-**Forge 原生路由按精确主机名/IP 加原端口匹配。** 配置沿用 `domain_suffix` 字段名，但在 native hook 中不会自动匹配子域名；需要将额外主机逐条列出。DNS 映射缓存在进程内，最多 128 条；直接 syscall、其他进程、未匹配目标及协议变化可能绕过此路径。默认规则不是完整通道清单的保证。
+**Forge 原生路由按精确主机名/IP 加原端口匹配。** 可用 `host`，旧配置的 `domain_suffix` 字段也继续支持，但在 native hook 中不会自动匹配子域名；需要将额外主机逐条列出。DNS 映射缓存在进程内，最多 128 条；直接 syscall、其他进程、未匹配目标及协议变化可能绕过此路径。默认规则不是完整通道清单的保证。
 
 `native-events.jsonl` 记录 DNS、原连接目标、路由端口及读写字节数，不记录网络载荷。此原生日志需要部署者自行轮转；它支持文件替换后重开。Python 代理的事件日志有内置轮转。启动器仅给自己的子进程设置 `LD_PRELOAD`，磁盘矿工文件和系统证书不变。
 

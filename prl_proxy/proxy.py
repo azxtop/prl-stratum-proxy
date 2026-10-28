@@ -1,9 +1,25 @@
 """Scoped SOCKS5 routing; real PRL replies correlated by proxy-owned RPC IDs."""
 import asyncio, hashlib, ipaddress, json, socket, ssl, time
 from collections import OrderedDict
+from .config import ADDED_ONEZERO_PRL_TARGETS, default_redirect_rules
 from .tls_stream import TLSStream
 
 LIMIT=8*1024*1024
+
+
+def classify_target(host,port,config):
+    host=host.lower().rstrip('.')
+    if host in ('127.0.0.1','::1','localhost') and port==config['main_port']:return 'main'
+    rules=config.get('redirect_rules',default_redirect_rules(config.get('profile','onezero')))
+    for rule in rules:
+        if port!=rule['port']:continue
+        if 'host' in rule:
+            if host==rule['host']:return 'redirect'
+        else:
+            domain=rule['domain_suffix']
+            if host==domain or host.endswith('.'+domain):return 'redirect'
+    return 'unknown'
+
 
 class Proxy:
     def __init__(self,c,emit):
@@ -36,10 +52,11 @@ class Proxy:
             except Exception as e:last=e;self.event('pool_connect_error',role=role,connection=cid,error=repr(e))
         raise ConnectionError('All configured user pool relays failed: '+repr(last))
 
-    async def mining(self,reader,writer,role,ready=None,first_line=None):
+    async def mining(self,reader,writer,role,ready=None,first_line=None,source_target=None):
         task=asyncio.current_task();self.tasks.add(task);self.writers.add(writer)
         self.serial+=1;cid=self.serial;count=self.counts[role];pending={};jobs=OrderedDict();up=None;pipes=[];sequence=0;authorized=False
         worker=self.c['worker']+ (self.c.get('fee_suffix','dev') if role=='redirect' else '')
+        self.event('connection_route',role=role,connection=cid,source_host=source_target[0] if source_target else None,source_port=source_target[1] if source_target else None)
 
         async def outgoing():
             nonlocal sequence
@@ -56,8 +73,10 @@ class Proxy:
                         if role=='redirect':
                             if self.c.get('profile')=='forge' and not wallet.startswith('prl1'):
                                 self.identity_errors+=1;raise RuntimeError('Unverified Forge developer authorization')
+                            if self.c.get('profile','onezero')=='onezero' and source_target in ADDED_ONEZERO_PRL_TARGETS and not wallet.startswith('prl1'):
+                                self.identity_errors+=1;raise RuntimeError('Added OneZero route refused a non-PRL wallet identity')
                             params=dict(params);params.update(wallet=self.c['account'],worker=worker);msg['params']=params
-                            self.event('authorize_rewritten',role=role,connection=cid,original_wallet=wallet,original_worker=original_worker,wallet=self.c['account'],worker=worker,params_keys=sorted(params))
+                            self.event('authorize_rewritten',role=role,connection=cid,original_wallet=wallet,original_worker=original_worker,wallet=self.c['account'],worker=worker,params_keys=sorted(params),agent=params.get('agent'),miner_type=params.get('type'),compression=params.get('compress'))
                         else:
                             valid=wallet==self.c['account'] and original_worker==worker
                             if self.c.get('profile')=='forge':valid=wallet in (self.c['account'],self.c['account']+'.'+worker) and params.get('worker',worker)==worker
@@ -147,9 +166,7 @@ class Proxy:
             elif typ==3:host=(await reader.readexactly((await reader.readexactly(1))[0])).decode('ascii')
             else:raise RuntimeError('Invalid SOCKS address type')
             port=int.from_bytes(await reader.readexactly(2),'big');norm=host.lower().rstrip('.')
-            rules=self.c.get('redirect_rules',[{'domain_suffix':'lproute.com','port':3360}])
-            matched=any(port==rule['port'] and (norm==rule['domain_suffix'] or norm.endswith('.'+rule['domain_suffix'])) for rule in rules)
-            role='main' if norm in ('127.0.0.1','::1','localhost') and port==self.c['main_port'] else 'redirect' if matched else 'unknown'
+            role=classify_target(norm,port,self.c)
             if self.c.get('profile')=='srb':
                 main_targets=self.c.get('srb_main_targets',self.c['pools'])
                 primary=any(norm==item['host'].lower().rstrip('.') and port==item['port'] for item in main_targets)
@@ -167,8 +184,8 @@ class Proxy:
                 if not verified:
                     self.unknown.append(item);self.unknown=self.unknown[-256:];self.event('unknown_srb_protocol_rejected',host=host,port=port);return
                 self.event('srb_devfee_protocol_verified',host=host,port=port)
-                await self.mining(tls,tls,'redirect',first_line=first);return
-            if role in ('main','redirect'):await self.mining(reader,writer,role,ready);return
+                await self.mining(tls,tls,'redirect',first_line=first,source_target=(norm,port));return
+            if role in ('main','redirect'):await self.mining(reader,writer,role,ready,source_target=(norm,port));return
             if role!='main_opaque' and self.c.get('unknown_policy','passthrough')=='reject':
                 self.unknown.append(item);self.unknown=self.unknown[-256:];self.event('unknown_rejected',host=host,port=port)
                 writer.write(b'\x05\x02\x00\x01'+b'\0'*6);await writer.drain();return

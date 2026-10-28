@@ -5,6 +5,21 @@ import re
 from pathlib import Path
 
 
+ADDED_ONEZERO_PRL_TARGETS = frozenset({
+    ("pearl-hk.lproute.com", 3361),
+    ("prl.suprnova.cc", 3373),
+})
+
+
+def default_redirect_rules(profile="onezero"):
+    if profile == "forge":
+        return [{"domain_suffix": "prl.kryptex.network", "port": 7048}]
+    rules = [{"domain_suffix": "lproute.com", "port": 3360}]
+    if profile == "onezero":
+        rules.extend({"host": host, "port": port} for host, port in sorted(ADDED_ONEZERO_PRL_TARGETS))
+    return rules
+
+
 def load_config(path):
     path = Path(path).resolve()
     with path.open(encoding="utf-8-sig") as source:
@@ -60,17 +75,19 @@ def load_config(path):
         for flag in ("tls", "verify_tls"):
             if flag in pool and type(pool[flag]) is not bool:
                 raise ValueError(f"{flag} must be a JSON boolean")
-    default_rules = [{"domain_suffix": "prl.kryptex.network", "port": 7048}] if c["profile"] == "forge" else [{"domain_suffix": "lproute.com", "port": 3360}]
-    c.setdefault("redirect_rules", default_rules)
+    c.setdefault("redirect_rules", default_redirect_rules(c["profile"]))
     if not isinstance(c["redirect_rules"], list):
         raise ValueError("redirect_rules must be a list")
     for rule in c["redirect_rules"]:
-        if not isinstance(rule, dict) or not isinstance(rule.get("domain_suffix"), str):
-            raise ValueError("Redirect rule requires domain_suffix")
-        domain = rule["domain_suffix"].lower().strip(".")
+        if not isinstance(rule, dict) or sum(key in rule for key in ("host", "domain_suffix")) != 1:
+            raise ValueError("Redirect rule requires exactly one of host or domain_suffix")
+        field = "host" if "host" in rule else "domain_suffix"
+        if not isinstance(rule[field], str):
+            raise ValueError("Redirect rule host/domain_suffix must be a string")
+        domain = rule[field].lower().strip(".")
         if not domain or ":" in domain or "/" in domain or " " in domain:
             raise ValueError("Invalid domain suffix")
-        rule["domain_suffix"] = domain
+        rule[field] = domain
         if type(rule.get("port")) is not int or not 1 <= rule["port"] <= 65535:
             raise ValueError("Invalid redirect rule port")
     c.setdefault("unknown_policy", "passthrough")

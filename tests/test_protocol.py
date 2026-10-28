@@ -1,7 +1,7 @@
 import asyncio,json,unittest
 from prl_proxy.proxy import Proxy,LIMIT
 
-async def test():
+async def test(host='pearl-ru.lproute.com',port=3360,wallet='developer-wallet'):
     events=[];received=[];proofs=[{'job_id':'job','plain_proof':'aa'*32},{'job_id':'job','plain_proof':'bb'*32}]
     async def upstream(r,w):
         try:
@@ -22,8 +22,8 @@ async def test():
     srv=await asyncio.start_server(p.socks,'127.0.0.1',0,limit=LIMIT)
     r,w=await asyncio.open_connection('127.0.0.1',srv.sockets[0].getsockname()[1],limit=LIMIT)
     w.write(b'\x05\x01\x00');await w.drain();assert await r.readexactly(2)==b'\x05\x00'
-    host=b'pearl-ru.lproute.com';w.write(b'\x05\x01\x00\x03'+bytes([len(host)])+host+(3360).to_bytes(2,'big'));await w.drain();assert (await r.readexactly(10))[:2]==b'\x05\x00'
-    w.write(json.dumps({'id':1,'method':'mining.authorize','params':{'wallet':'developer-wallet','worker':'developer-worker'}}).encode()+b'\n');await w.drain()
+    name=host.encode('ascii');w.write(b'\x05\x01\x00\x03'+bytes([len(name)])+name+port.to_bytes(2,'big'));await w.drain();assert (await r.readexactly(10))[:2]==b'\x05\x00'
+    w.write(json.dumps({'id':1,'method':'mining.authorize','params':{'wallet':wallet,'worker':'developer-worker'}}).encode()+b'\n');await w.drain()
     assert json.loads(await r.readline())['id']==1;assert json.loads(await r.readline())['method']=='mining.notify'
     assert p.counts['redirect']['authorized']==1 and p.counts['redirect']['accepted']==0
     for proof in proofs:w.write(json.dumps({'id':1,'method':'mining.submit','params':proof}).encode()+b'\n')
@@ -33,6 +33,9 @@ async def test():
     w.close();await w.wait_closed();await asyncio.sleep(.1)
     assert p.counts['redirect']['submitted']==2 and p.counts['redirect']['accepted']==1 and p.counts['redirect']['rejected']==1 and p.counts['redirect']['unanswered']==0
     replies=[x for x in events if x['event']=='submit_reply'];assert len(replies)==2 and replies[0]['proof_sha256']!=replies[1]['proof_sha256']
+    route=next(x for x in events if x['event']=='connection_route')
+    assert (route['source_host'],route['source_port'])==(host.lower().rstrip('.'),port)
+    assert all(reply['connection']==route['connection'] and reply['role']==route['role'] for reply in replies)
     async def echo(reader,writer):
         try:
             while chunk:=await reader.read(65536):writer.write(chunk);await writer.drain()
@@ -51,6 +54,12 @@ async def test():
 class ProtocolTest(unittest.TestCase):
     def test_protocol_roundtrip(self):
         asyncio.run(asyncio.wait_for(test(),15))
+
+    def test_onezero_hk3361_roundtrip(self):
+        asyncio.run(asyncio.wait_for(test('PEARL-HK.LPROUTE.COM.',3361,'prl1fixture'),15))
+
+    def test_onezero_suprnova3373_roundtrip(self):
+        asyncio.run(asyncio.wait_for(test('prl.suprnova.cc',3373,'prl1fixture'),15))
 
 if __name__=='__main__':
     unittest.main()
